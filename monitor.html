@@ -1,0 +1,204 @@
+<html>
+<head>
+	<script type="text/javascript">WebSocket = undefined;</script>
+	<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.6.1/jquery.min.js" type="text/javascript"></script>
+	<script src="scripts/highcharts.js" type="text/javascript"></script>
+	<script type="text/javascript">
+		
+		// global visitor counter
+		var visitorCounter = 0;
+		var counter = 0;
+		var addPoint = function(visitorCount) {
+			var flag = true;
+			if (counter != 300) {
+				counter++;
+				flag = false;
+			}
+
+			visitorChart.series[0].addPoint([new Date().getTime(), visitorCount], true, flag);
+		}
+
+		var addCategory = function(categoryName) {
+			var index = siteChart.xAxis[0].categories.indexOf(categoryName);
+			if (index == -1) {
+				// resize chart
+				if (siteChart.xAxis[0].categories.length > 8) {
+					siteChart.setSize(document.getElementById('site_canvas').clientWidth, document.getElementById('site_canvas').clientHeight + 15);
+				}
+
+				siteChart.xAxis[0].categories.push(categoryName);
+				siteChart.series[0].addPoint(1, false);
+			} else {
+				siteChart.series[0].data[index].y++;
+			}
+			
+			siteChart.redraw();
+		}
+
+		$(document).ready(function() {
+			visitorChart = new Highcharts.Chart({
+				chart: {
+					renderTo: 'counter_canvas',
+					type: 'line'
+				},
+				title: {
+					text: 'Pageload'
+				},
+				xAxis: {
+					type: 'datetime',
+					//maxZoom: 20 * 1000,
+					title: {
+						text: 'Time (UTC)'
+					}
+				},
+				yAxis: {
+					title: {
+						text: 'Hits (60sec)'
+					},
+					min: 0,
+					tickInterval: 1
+				},
+				series: [{
+					name: "Hits (60sec)",
+					data: [[new Date().getTime(), 0]]
+				}],
+				plotOptions: {
+        				series: {
+            					marker: {
+                					radius: 0
+           					 }
+        				}
+    				}
+			});
+
+			setInterval("addPoint(visitorCounter);", 1500);
+
+			siteChart = new Highcharts.Chart({
+                                chart: {
+                                        renderTo: 'site_canvas',
+                                        type: 'bar'
+                                },
+                                title: {
+                                        text: 'Pages visited'
+                                },
+                                xAxis: {
+                                        title: {
+                                                text: 'Sites'
+                                        },
+					categories: []
+                                },
+                                yAxis: {
+                                        title: {
+                                                text: 'Hits'
+                                        },
+                                        min: 0,
+                                        tickInterval: 1
+                                },
+                                series: [{
+					name: "Pageloads",
+                                        data: []
+                                }]
+                        });
+		});
+	</script>
+	<script type="text/javascript" src="scripts/require.js"></script>
+	<script type="text/javascript">
+		require.config({
+			baseUrl: "scripts",
+			paths: {
+				"faye": "http://gigger.mayflower.de/faye"
+				}
+		});
+		require(["monitorlib"], function(monitorlib) {
+			//console.log("monitorlib ready: ", monitorlib);
+			var gigger = new monitorlib.Gigger("http://gigger.mayflower.de/faye");
+			
+			//var counterDiv = document.getElementById('counter_div');
+			var logger = document.getElementById('logger');
+			logger.scrollTop = logger.scrollHeight;
+			var checkbox = document.getElementById('autoscroll');
+			
+			decreasePong = function() {
+				visitorCounter -= 1;
+				//counterLine.append(new Date().getTime, visitorCounter);
+				//counterDiv.innerHTML = "<b>"+visitorCounter+"</b>";
+				
+				addPoint(visitorCounter);
+			}
+			
+			increasePong = function(timeStamp) {
+				visitorCounter += 1;
+				
+				addPoint(visitorCounter);
+				
+				//counterLine.append(timeStamp, visitorCounter);
+				//counterDiv.innerHTML = "<b>"+visitorCounter+"</b>";
+				setTimeout("decreasePong();", 60000);
+			}
+			
+			var pong = function(e) {
+				//console.log('got pong: ', e, e.timeStamp, new Date(e.timeStamp));
+				// increase counter and set timeout
+				increasePong(e.timeStamp);
+                                logger.innerHTML += "\n "+ new Date() + " - NEW HIT ON: " + e.location.pathname;
+				addCategory(e.location.pathname);
+				/*visitorCounter += 1;
+				counterLine.append(e.timeStamp, visitorCounter);
+				counterDiv.innerHTML = "<b>"+visitorCounter+"</b>";
+				setTimeout("visitorCounter -= 1; counterDiv.innerHTML = '<b>'+visitorCounter+'</b>';", 60000);*/
+			};
+			
+			var linkClicked = function(e) {
+				//console.log("link clicked: " + e.fields.target.href);
+				var text = e.fields.target.innerText || e.fields.target.textContent;
+				var href = "";
+				if (e.fields.target.href) {
+					href = " <" + e.fields.target.href + ">";
+				}
+				var html = "\n " + new Date() + " - LINK CLICKED: " + text + href;
+				logger.innerHTML += html;
+				//console.log(html);
+				//console.log(e);
+				if (checkbox.checked) {
+					logger.scrollTop = logger.scrollHeight;
+				}
+			}
+			
+			var eventRequest;
+			var fields;
+			
+			var custom = "gigger.triggerEvent('/pong', {timeStamp: new Date().getTime()});";
+			
+			gigger.addChannelListener('/pong', pong);
+			eventRequest = {pathRegex: "^\/", customJS: custom};
+			//gigger.requestEvent(eventRequest);
+			
+			fields = {target: {innerText: null, textContent: null, href: null}}
+			eventRequest = {pathRegex: "^\/", tagName: "a", event: "click", fields: fields};
+			gigger.requestEvent(eventRequest, linkClicked);
+		});
+	</script>
+</head>
+<body>
+	
+	<div>
+		<!--<h2>Hit counter (last 60sec)</h2>
+		<div id="counter_div"><b>0</b></div>-->
+		<div id="counter_canvas"/>
+	</div>
+
+        <div>
+                <!--<h2>Pages visited</h2>-->
+                <div id="site_canvas"/>
+        </div>
+
+	
+	<div>
+		<textarea id="logger" cols="130" rows="30" readonly="true"></textarea>
+		<p>
+			<input type="checkbox" id="autoscroll" value="autoscroll" checked="checked"> Autoscroll
+		</p>
+	</div>
+
+</body>
+</html>
